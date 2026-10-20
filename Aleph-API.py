@@ -1,6 +1,11 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import APIKeyHeader
 from typing import List
+from src.parser import parse_syslog
+from datetime import datetime, timezone
+import json
+import asyncio
+from pathlib import Path
 
 app = FastAPI()
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -32,6 +37,30 @@ async def authenticate_user(api_key: str = Depends(get_api_key)):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
+def timestamp_to_seconds(value):
+    try:
+        return int(value) // 1000
+    except ValueError:
+        parsed_time = datetime.fromisoformat(value)
+
+        if parsed_time.tzinfo is None:
+            parsed_time = parsed_time.replace(tzinfo=timezone.utc)
+
+        return int(parsed_time.timestamp())
+
+
+def load_logs():
+    with open("data/ha_logs.json", "r") as file:
+        logs = json.load(file)
+
+    with open("data/ha_syslogs.json", "r") as file:
+        syslogs = json.load(file)
+
+    logs.extend(syslogs)
+
+    return logs
+
+
 class Aleph:
     def __init__(self):
         pass
@@ -42,7 +71,7 @@ class Aleph:
             since: int,  # Timestamp indicating the start time. Example: 1614556800 (Start of 2021)
             until: int,  # Timestamp indicating the end time. Example: 1640995200 (Start of 2022)
             authenticated: bool = Depends(authenticate_user)
-    ) -> List[dict]:
+    ) -> list[dict | str]:
         """
         Retrieve enriched logs within a specified time range.
 
@@ -53,7 +82,23 @@ class Aleph:
         Returns:
         - JSON file containing enriched logs within the specified time range.
         """
-        pass
+
+        logs = await asyncio.to_thread(load_logs)
+        filtered_logs = []
+
+        for log in logs:
+            if isinstance(log, str):
+                parsed_log = parse_syslog(log)
+            else:
+                parsed_log = log # готовый словарь
+
+            timestamp = timestamp_to_seconds(parsed_log["timestamp"])
+            if since < timestamp <= until:
+                filtered_logs.append(log)
+
+        return filtered_logs
+
+
 
     @staticmethod
     @app.get("/aleph/get_logs/{log_id}")

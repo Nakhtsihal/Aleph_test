@@ -1,0 +1,5 @@
+redis
+nats-py
+httpx
+fastapi
+uvicorn

@@ -1,0 +1,22 @@
+# Virtual environment
+.venv/
+
+# PyCharm settings
+.idea/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+
+# Служебные файлы macOS
+.DS_Store
+
+# Local environment settings
+.env
+.env.*
+!.env.example
+
+# Временные и старые результаты обработки
+data/*.tmp
+data/output_*.json
+data/enriched_logs.json

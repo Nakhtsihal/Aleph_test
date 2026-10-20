@@ -1,0 +1,52 @@
+services:
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+  nats:
+    image: nats:2
+    ports:
+      - "4222:4222"
+
+  redis-loader:
+    build: .
+    command: python src/redis_loader.py
+    environment:
+      REDIS_HOST: redis
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  aleph-api:
+    build: .
+    command: uvicorn Aleph-API:app --host 0.0.0.0 --port 8000
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+
+  processor:
+    build: .
+    command: python src/processor.py
+    environment:
+      REDIS_HOST: redis
+      NATS_URL: nats://nats:4222
+      ALEPH_API_URL: http://aleph-api:8000/aleph/get_logs
+      PYTHONUNBUFFERED: "1"
+      START_TIMESTAMP: "1640995200"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis-loader:
+        condition: service_completed_successfully
+      nats:
+        condition: service_started
+      aleph-api:
+        condition: service_started
