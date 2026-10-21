@@ -34,7 +34,6 @@ class Enricher:
         return result
 
 
-
 async def main():
     enricher = Enricher()
     try:

@@ -11,7 +11,7 @@ The system contains five Docker Compose services:
 | Service | Purpose |
 |---|---|
 | `redis` | Stores enrichment metadata keyed by IP address |
-| `nats` | Receives enriched log messages |
+| `nats` | Stores enriched log messages using JetStream |
 | `redis-loader` | Loads `data/enrichment.json` into Redis and exits |
 | `aleph-api` | Returns regular and syslog records filtered by time |
 | `processor` | Periodically retrieves, parses, enriches, publishes, and saves logs |
@@ -21,7 +21,7 @@ Processing flow:
 ```text
 enrichment.json → redis-loader → Redis
                                   ↓
-Aleph API → processor → parsing → enrichment → NATS
+Aleph API → processor → parsing → enrichment → NATS JetStream
                                            → data/output.json
 ```
 
@@ -56,7 +56,7 @@ Start the infrastructure and API:
 docker compose up -d --build redis nats aleph-api
 ```
 
-If you want to observe NATS messages, start the subscriber as described below before starting the processor.
+The processor creates the JetStream stream on its first run. After that, the subscriber can read stored messages even if it was not running when they were published.
 
 Start the processor and its Redis preload dependency:
 
@@ -80,7 +80,7 @@ Stop the system:
 docker compose down
 ```
 
-The output file remains in the local `data/` directory.
+The output file remains in the local `data/` directory. JetStream messages and durable consumer progress remain in the `nats_data` Docker volume. Running `docker compose down -v` deletes that volume.
 
 ## Observe NATS messages
 
@@ -94,15 +94,19 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-Run the subscriber in a separate terminal before starting the processor:
+After the processor has created the stream, run the subscriber in a separate terminal:
 
 ```bash
 python src/nats_subscriber.py
 ```
 
-Messages are published to the `enriched_logs` subject.
+Messages are published to the `enriched_logs` subject and stored in the `ENRICHED_LOGS` JetStream stream using file storage.
 
-The system uses Core NATS. Messages are delivered to active subscribers; they are not stored for later replay.
+The subscriber uses the durable consumer `log_viewer` and explicitly acknowledges each message after printing it. Restarting the subscriber with the same consumer resumes from its saved progress; acknowledged messages are not normally delivered again. Unacknowledged messages can be redelivered.
+
+Acknowledgements track consumer progress. They do not delete messages from the stream under the current retention policy.
+
+JetStream files are stored under `/data` inside the NATS container, backed by the `nats_data` Docker volume.
 
 ## Verify the output
 

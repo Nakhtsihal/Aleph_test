@@ -7,8 +7,8 @@ import httpx
 
 from parser import parse_syslog, parse_regular_log
 from enricher import Enricher
-from nats_publisher import publish_log
 from retriever import fetch_logs
+from nats_publisher import publish_log, setup_jetstream
 
 
 def save_logs(logs):
@@ -31,12 +31,13 @@ def save_logs(logs):
 
     os.replace(temporary_path, path)
 
-async def main():
 
+async def main():
     enricher = Enricher()
     nc = await nats.connect(os.getenv("NATS_URL", "nats://localhost:4222"))
     since = int(os.getenv("START_TIMESTAMP", str(int(time.time()))))
     try:
+        js = await setup_jetstream(nc)
         while True:
             until = int(time.time())
             try:
@@ -60,7 +61,7 @@ async def main():
             enriched_logs = await asyncio.gather(*tasks)
 
             for log in enriched_logs:
-                await publish_log(nc, log)
+                await publish_log(js, log)
 
             await asyncio.to_thread(save_logs, enriched_logs)
             print(len(enriched_logs))
