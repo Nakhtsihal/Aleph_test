@@ -70,9 +70,29 @@ Check processing messages:
 docker compose logs --follow processor
 ```
 
-For the supplied datasets and configured start time, the first successful batch contains 1,000 records: 500 regular logs and 500 syslog records. Subsequent successful polls report `0` while no new input records are available.
+For the supplied datasets and configured start time, the first successful batch contains 1,000 records: 500 regular logs and 500 syslog records.
 
-The Redis loader exiting after printing `Loaded` is expected: it is a one-time job.
+The processor logs `Processor started` after connecting to NATS and preparing JetStream. After publishing and saving a non-empty batch, it logs `Published and saved 1000 logs`. Empty polls do not produce a batch completion message. HTTP client request messages may still appear.
+
+The Redis loader is a one-time job. It exits with code 0 after successfully loading the enrichment data and closing its connection. It does not print a completion message.
+
+Stop only the processor:
+
+```bash
+docker compose stop processor
+```
+
+The processor handles SIGTERM by cancelling its main task and closing NATS and Redis connections. A locally running processor can be stopped with Ctrl+C.
+
+A successful SIGTERM shutdown logs:
+
+```text
+Processor shutdown requested
+Processor connections closed
+Processor stopped
+```
+
+Shutdown can interrupt the current batch; completing the entire batch is not guaranteed.
 
 Stop the system:
 
@@ -151,6 +171,20 @@ docker compose up -d aleph-api
 ```
 
 The processor resumes requests without being restarted.
+
+## Application structure
+
+`LogProcessor` in `src/processor.py` owns the enrichment component, NATS connection, JetStream context, and polling position.
+
+- `start()` connects to NATS and prepares the JetStream stream.
+- `run()` retrieves, parses, enriches, publishes, and saves logs.
+- `close()` closes NATS and Redis connections.
+
+The module-level `main()` creates the processor and calls `start()` and `run()` inside `try`, with `close()` in `finally`. The entry-point guard configures logging and starts the application only when the file is executed directly.
+
+`Enricher` owns a shared Redis client and a semaphore limiting concurrent lookups. Stateless parsing and publication helpers remain functions. Function parameters and return values have type annotations.
+
+The API is started by Uvicorn and exposes the authenticated `/aleph/get_logs` endpoint. Unused placeholder endpoints and demonstration code have been removed.
 
 ## Configuration
 

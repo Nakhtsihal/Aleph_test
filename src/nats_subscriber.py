@@ -1,17 +1,17 @@
 import asyncio
 import nats
+from nats.aio.msg import Msg
 
 
-async def message_handler(msg):
-    print(msg.data.decode())         # содержит сообщение в байтах, которое преобразуется в строку
-    await msg.ack()                 #
+async def message_handler(msg: Msg) -> None:
+    print(msg.data.decode())
+    await msg.ack()
 
 
-async def main():
+async def main() -> None:
     nc = await nats.connect("nats://localhost:4222")
     try:
         js = nc.jetstream()
-        print("Connected to NATS!")
 
         await js.subscribe(
             "enriched_logs",

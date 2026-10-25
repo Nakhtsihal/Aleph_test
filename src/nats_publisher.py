@@ -1,46 +1,25 @@
 from nats.js.api import StorageType
 from nats.js.errors import NotFoundError
+from nats.aio.client import Client
+from nats.js.client import JetStreamContext
+from typing import Any
 import json
 
 
-async def publish_log(js, log):
+async def publish_log(js: JetStreamContext, log: dict[str, Any]) -> None:
     message = json.dumps(log).encode("utf-8")
     await js.publish("enriched_logs", message)
 
 
-async def setup_jetstream(nc):
+async def setup_jetstream(nc: Client) -> JetStreamContext:
     js = nc.jetstream()
     try:
         await js.stream_info("ENRICHED_LOGS")
     except NotFoundError:
         await js.add_stream(
-        name="ENRICHED_LOGS",
-        subjects=["enriched_logs"],
-        storage=StorageType.FILE
-    )
+            name="ENRICHED_LOGS",
+            subjects=["enriched_logs"],
+            storage=StorageType.FILE
+        )
     return js
-
-
-
-# async def main():
-#     nc = await nats.connect("nats://localhost:4222")
-#     print("Connected to NATS!")
-#
-#     print("Message published!")
-#     await nc.drain()
-#
-# log = {
-#     "client_ip": "1.1.1.1",
-#     "action": "login",
-#     "findings": {
-#         "1.1.1.1": {
-#             "country": "Australia"
-#         }
-#     }
-# }
-#
-#
-# if __name__ == "__main__":
-#     asyncio.run(main())
-
 

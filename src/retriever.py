@@ -1,8 +1,9 @@
 import httpx
 import os
+from typing import Any
 
 
-async def fetch_logs(since, until):
+async def fetch_logs(since: int, until: int) -> list[dict[str, Any] | str]:
     params = {
         "since": since,
         "until": until
