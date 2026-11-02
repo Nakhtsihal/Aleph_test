@@ -247,3 +247,12 @@ The syslog parser supports the format supplied with the assignment.
 The polling position is stored in memory. Restarting the processor uses `START_TIMESTAMP` again and can append previously processed records.
 
 File output and NATS publication are separate operations. They are not a single transaction, and the system does not provide exactly-once delivery across both outputs.
+
+
+## Retry behavior and parser composition
+
+SysLogParser uses an internal RegularLogParser to normalize the payload, then sets source and severity from the syslog header.
+
+Temporary Redis connection and timeout errors, selected NATS publication errors, and temporary JetStream setup errors are retried after POLL_INTERVAL seconds. Each retry repeats the individual operation. The NATS client uses unlimited reconnect attempts with a two-second delay. Invalid stream configuration is not retried.
+
+A publication timeout can occur after NATS stores a message; retrying may produce duplicates. The polling position remains in memory, so restarting can process old records again.

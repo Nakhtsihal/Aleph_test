@@ -27,16 +27,23 @@ class RegularLogParser(ParserInterface):
         return parsed_log
 
 
-class SysLogParser(RegularLogParser, ParserInterface):
+class SysLogParser(ParserInterface):
+    def __init__(self) -> None:
+        self._regular_parser = RegularLogParser()
+
     def parse(self, log: str) -> dict[str, Any]:
         index = log.find('"AuditID"')
         header = log[:index].strip()
         parts = header.split()
+
         source = parts[-2]
         severity = parts[-1].rstrip(":").lower()
+
         payload_string = "{" + log[index:] + "}"
         payload = json.loads(payload_string)
-        parsed_log = super().parse(payload)
+
+        parsed_log = self._regular_parser.parse(payload)
         parsed_log["source"] = source
         parsed_log["severity"] = severity
+
         return parsed_log

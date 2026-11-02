@@ -14,8 +14,41 @@ from retriever import LogRetriever
 from nats_publisher import NatsPublisher, setup_jetstream
 from typing import Any
 from logging_config import setup_logging
+from collections.abc import Awaitable, Callable
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
+from nats.errors import (ConnectionClosedError, ConnectionReconnectingError, NoRespondersError, NoServersError, TimeoutError as NatsTimeoutError)
+from nats.js.errors import ServiceUnavailableError
 
 logger = logging.getLogger(__name__)
+
+
+async def retry_operation[T](
+    operation: Callable[[], Awaitable[T]],
+    *,
+    action: str,
+    retry_delay: float,
+) -> T:
+    while True:
+        try:
+            return await operation()
+        except (
+            RedisConnectionError,
+            RedisTimeoutError,
+            NatsTimeoutError,
+            NoRespondersError,
+            NoServersError,
+            ConnectionReconnectingError,
+            ServiceUnavailableError,
+        ) as error:
+            logger.warning(
+                "%s failed; retrying in %s seconds: %s",
+                action,
+                retry_delay,
+                error,
+                extra={"action": action, "status": "retry"},
+            )
+            await asyncio.sleep(retry_delay)
 
 
 class LogProcessor:
@@ -35,12 +68,27 @@ class LogProcessor:
         self.publisher: NatsPublisher | None = None
 
     async def start(self) -> None:
-        self.nats_client = await nats.connect(os.getenv("NATS_URL", "nats://localhost:4222"))
-        self.jetstream = await setup_jetstream(self.nats_client)
+        self.nats_client = await retry_operation(
+            lambda: nats.connect(
+                os.getenv("NATS_URL", "nats://localhost:4222"),
+                max_reconnect_attempts=-1,
+                reconnect_time_wait=2,
+            ),
+            action="connect_nats",
+            retry_delay=self.poll_interval,
+        )
+
+        self.jetstream = await retry_operation(
+            lambda: setup_jetstream(self.nats_client),
+            action="setup_jetstream",
+            retry_delay=self.poll_interval,
+        )
+
         self.publisher = NatsPublisher(self.jetstream)
 
-        logger.info("Processor started",
-                    extra={"action": "processor_start", "status": "success"},
+        logger.info(
+            "Processor started",
+            extra={"action": "processor_start", "status": "success"},
         )
 
     async def close(self) -> None:
@@ -79,13 +127,21 @@ class LogProcessor:
                 else:
                     parsed_log = self.regular_parser.parse(log)
 
-                enriched_log = self.enricher.enrich_log(parsed_log)
-                tasks.append(enriched_log)
+                task = retry_operation(
+                    lambda current_log=parsed_log: self.enricher.enrich_log(current_log),
+                    action="enrich_log",
+                    retry_delay=self.poll_interval,
+                )
+                tasks.append(task)
 
             enriched_logs = await asyncio.gather(*tasks)
 
             for log in enriched_logs:
-                await self.publisher.publish_log(log)
+                await retry_operation(
+                    lambda current_log=log: self.publisher.publish_log(current_log),
+                    action="publish_log",
+                    retry_delay=self.poll_interval,
+                )
 
             await asyncio.to_thread(save_logs, enriched_logs)
             if enriched_logs:
