@@ -156,4 +156,4 @@ if __name__ == "__main__":
             "Processor failed",
             extra={"action": "processor_run", "status": "error"}
         )
-        raise
+        raise SystemExit(1)

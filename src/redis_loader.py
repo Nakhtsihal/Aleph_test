@@ -26,4 +26,4 @@ if __name__ == "__main__":
             "Enrichment loading failed",
             extra={"action": "load_enrichment", "status": "error"},
         )
-        raise
+        raise SystemExit(1)

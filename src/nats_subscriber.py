@@ -64,6 +64,12 @@ class NatsSubscriber:
             pass
 
         else:
+
+            if consumer_info.config.filter_subject != self.subject:
+                raise ValueError(
+                    "Existing consumer filter subject does not match requested subject"
+                )
+
             if consumer_info.config.ack_wait != self.ack_wait:
                 raise ValueError(
                     "Existing consumer ack wait does not match requested ack wait"
@@ -130,4 +136,4 @@ if __name__ == "__main__":
             "Subscriber failed",
             extra={"action": "subscriber_run", "status": "error"}
         )
-        raise
+        raise SystemExit(1)
