@@ -1,30 +1,29 @@
 import asyncio
-import json
-import redis.asyncio as redis
-import os
-from typing import Any
+import logging
+from enricher import Enricher
+from logging_config import setup_logging
 
-
-def load_enrichment() -> dict[str, dict[str, Any]]:
-    with open("data/enrichment.json") as file:
-        enrichment = json.load(file)
-    return enrichment
+logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    client = redis.Redis(
-        host=os.getenv("REDIS_HOST", "localhost"),
-        port=6379,
-        decode_responses=True
-    )
+    enricher = Enricher()
     try:
-        enrichment = await asyncio.to_thread(load_enrichment)
-        for key, value in enrichment.items():
-            metadata_json = json.dumps(value)
-            await client.set(key, metadata_json)
+        await enricher.load_enrichment("data/enrichment.json")
+        logger.info(
+            "Enrichment data loaded",
+            extra={"action": "load_enrichment", "status": "success"},
+        )
     finally:
-        await client.aclose()
-
+        await enricher.close_connection()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    setup_logging()
+    try:
+        asyncio.run(main())
+    except Exception:
+        logger.exception(
+            "Enrichment loading failed",
+            extra={"action": "load_enrichment", "status": "error"},
+        )
+        raise

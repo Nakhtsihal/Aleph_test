@@ -1,16 +1,19 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import APIKeyHeader
-from src.parser import parse_syslog
+from src.parser import SysLogParser
+from src.logging_config import setup_logging
 from datetime import datetime, timezone
 from typing import Any
 import json
 import asyncio
+import logging
 
-
+setup_logging()
+logger = logging.getLogger(__name__)
 app = FastAPI()
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+syslog_parser = SysLogParser()
 
-# Predefined list of access keys
 access_keys = {
     "access_key_1": "user1",
     "access_key_2": "user2"
@@ -56,19 +59,32 @@ def load_logs() -> list[dict[str, Any] | str]:
 @app.get("/aleph/get_logs")
 async def get_logs(since: int,
                    until: int,
-                   authenticated: bool = Depends(authenticate_user)
-                   ) -> list[dict[str, Any] | str]:
+                   authenticated: bool = Depends(authenticate_user)) -> list[dict[str, Any] | str]:
+    try:
         logs = await asyncio.to_thread(load_logs)
         filtered_logs = []
 
         for log in logs:
             if isinstance(log, str):
-                parsed_log = parse_syslog(log)
+                parsed_log = syslog_parser.parse(log)
             else:
                 parsed_log = log
 
             timestamp = timestamp_to_seconds(parsed_log["timestamp"])
             if since < timestamp <= until:
                 filtered_logs.append(log)
+    except Exception:
+        logger.error(
+            "Failed to retrieve logs",
+            extra={"action": "get_logs", "status": "error"}
+        )
+        raise
 
-        return filtered_logs
+    logger.info(
+        "Returning %s logs for range (%s, %s]",
+        len(filtered_logs),
+        since,
+        until,
+        extra={"action": "get_logs", "status": "success"}
+    )
+    return filtered_logs

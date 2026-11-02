@@ -74,7 +74,7 @@ For the supplied datasets and configured start time, the first successful batch 
 
 The processor logs `Processor started` after connecting to NATS and preparing JetStream. After publishing and saving a non-empty batch, it logs `Published and saved 1000 logs`. Empty polls do not produce a batch completion message. HTTP client request messages may still appear.
 
-The Redis loader is a one-time job. It exits with code 0 after successfully loading the enrichment data and closing its connection. It does not print a completion message.
+The Redis loader is a one-time job. It exits with code 0 after successfully loading the enrichment data and closing its connection. It logs `Enrichment data loaded` after loading the metadata.
 
 Stop only the processor:
 
@@ -82,7 +82,7 @@ Stop only the processor:
 docker compose stop processor
 ```
 
-The processor handles SIGTERM by cancelling its main task and closing NATS and Redis connections. A locally running processor can be stopped with Ctrl+C.
+The processor handles SIGTERM by cancelling its main task and closing NATS, Redis, and HTTP connections. A locally running processor can be stopped with Ctrl+C.
 
 A successful SIGTERM shutdown logs:
 
@@ -120,9 +120,9 @@ After the processor has created the stream, run the subscriber in a separate ter
 python src/nats_subscriber.py
 ```
 
-Messages are published to the `enriched_logs` subject and stored in the `ENRICHED_LOGS` JetStream stream using file storage.
+Messages are published to the `enriched_logs` subject and stored in the `enriched_logs` JetStream stream using file storage.
 
-The subscriber uses the durable consumer `log_viewer` and explicitly acknowledges each message after printing it. Restarting the subscriber with the same consumer resumes from its saved progress; acknowledged messages are not normally delivered again. Unacknowledged messages can be redelivered.
+The subscriber uses the durable consumer `log_viewer` and explicitly acknowledges each message after writing it to the log. Restarting the subscriber with the same consumer resumes from its saved progress; acknowledged messages are not normally delivered again. Unacknowledged messages can be redelivered.
 
 Acknowledgements track consumer progress. They do not delete messages from the stream under the current retention policy.
 
@@ -162,7 +162,7 @@ To check HTTP error recovery, temporarily stop the API:
 docker compose stop aleph-api
 ```
 
-The processor logs the request error and retries after 30 seconds without advancing the start of the polling range.
+The processor logs the request error and retries after the configured polling interval (30 seconds by default) without advancing the start of the polling range.
 
 Restore the API:
 
@@ -178,11 +178,21 @@ The processor resumes requests without being restarted.
 
 - `start()` connects to NATS and prepares the JetStream stream.
 - `run()` retrieves, parses, enriches, publishes, and saves logs.
-- `close()` closes NATS and Redis connections.
+- `close()` closes NATS, Redis, and HTTP connections.
 
 The module-level `main()` creates the processor and calls `start()` and `run()` inside `try`, with `close()` in `finally`. The entry-point guard configures logging and starts the application only when the file is executed directly.
 
-`Enricher` owns a shared Redis client and a semaphore limiting concurrent lookups. Stateless parsing and publication helpers remain functions. Function parameters and return values have type annotations.
+`RegularLogParser` and `SysLogParser` implement `ParserInterface` and normalize the two supported log formats.
+
+`LogRetriever` owns a reusable asynchronous HTTP client and retrieves logs from the API.
+
+`Enricher` owns the Redis client and a semaphore limiting concurrent lookups. It also loads enrichment metadata from a JSON file. The separate `redis-loader` service invokes this loading method and exits.
+
+`NatsPublisher` implements `PublisherInterface` and publishes enriched logs through JetStream. `setup_jetstream()` creates an absent stream and checks the subject, storage type, and maximum age of an existing stream.
+
+`NatsSubscriber` reads messages using a durable consumer and explicitly acknowledges each message after writing it to the log. It checks the acknowledgement wait and maximum pending acknowledgements of an existing consumer before subscribing.
+
+Shared logging configuration is defined in `src/logging_config.py` and reused by the processor, subscriber, Redis loader, and API. Logs use JSON with `level`, `logger`, `message`, `action`, and `status` fields. Exception records can also include a traceback in `exception`. Uvicorn uses the same formatter. Third-party records without `action` or `status` contain `null` in those fields.
 
 The API is started by Uvicorn and exposes the authenticated `/aleph/get_logs` endpoint. Unused placeholder endpoints and demonstration code have been removed.
 
@@ -192,14 +202,24 @@ The processor reads these environment variables:
 
 | Variable | Purpose |
 |---|---|
-| `REDIS_HOST` | Redis hostname |
+| `REDIS_HOST` | Redis hostname; default `localhost` |
+| `REDIS_PORT` | Redis port; default `6379` |
+| `ENRICHMENT_CONCURRENCY` | Concurrent Redis lookup limit; default `20` |
 | `NATS_URL` | NATS connection URL |
 | `ALEPH_API_URL` | Log retrieval endpoint |
+| `ALEPH_API_KEY` | API key; default fixture key `access_key_1` |
+| `POLL_INTERVAL` | Positive polling interval in seconds; default `30` |
 | `START_TIMESTAMP` | Initial Unix timestamp in seconds |
 
 Compose sets `START_TIMESTAMP` to `1640995200`, the beginning of 2022, so the supplied historical records are retrieved. If this variable is absent, the processor starts from the current time.
 
-The processor pauses for 30 seconds after each successful batch or failed HTTP request.
+The processor pauses for `POLL_INTERVAL` seconds after each successful batch or failed HTTP request.
+
+`Enricher` accepts `host`, `port`, and `concurrency` constructor arguments with environment fallbacks. Its current port and concurrency fallbacks use `or`, so zero selects the fallback. `LogRetriever` accepts `url` and `api_key`; omitted values are read from the environment.
+
+`NatsPublisher` accepts a JetStream context and subject. `setup_jetstream()` accepts `stream_name`, `subject`, and `max_age` in seconds. The default maximum age is `0.0` (no age limit). Existing stream settings must match the requested values.
+
+`NatsSubscriber` accepts `url`, `subject`, `stream_name`, `durable_name`, `ack_wait` (default `30.0` seconds), and `max_ack_pending` (default `1000`). These settings must match an existing durable consumer; it is not automatically updated.
 
 ## Parsing and output decisions
 
@@ -216,7 +236,7 @@ The processor pauses for 30 seconds after each successful batch or failed HTTP r
 - `findings` maps the client IP to its full Redis metadata.
 - Other available fields handled by the parser, such as `audit_id` and `action`, are retained.
 
-HTTP, Redis, and NATS operations use asynchronous clients. Blocking file operations run through `asyncio.to_thread()`. A semaphore limits concurrent Redis enrichment lookups to 20.
+HTTP, Redis, and NATS operations use asynchronous clients. Blocking file operations run through `asyncio.to_thread()`. A semaphore limits concurrent Redis enrichment lookups to the configured concurrency, 20 by default.
 
 The output is a JSON array. Each non-empty batch is added to the existing records, written to a temporary file, and then replaces the main file using `os.replace()`.
 
