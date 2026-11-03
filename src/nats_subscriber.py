@@ -1,15 +1,12 @@
 import asyncio
 import nats
 import os
-import logging
 from nats.aio.msg import Msg
 from nats.aio.client import Client
 from nats.js.api import ConsumerConfig
 from nats.js.errors import NotFoundError
-from logging_config import setup_logging
-
-
-logger = logging.getLogger(__name__)
+from src.logging_config import setup_logging
+from src import logger
 
 
 class NatsSubscriber:

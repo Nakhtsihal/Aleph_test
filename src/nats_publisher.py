@@ -4,10 +4,9 @@ from nats.aio.client import Client
 from nats.js.client import JetStreamContext
 from typing import Any
 from abc import ABC, abstractmethod
+from src import logger
 import json
-import logging
 
-logger = logging.getLogger(__name__)
 
 
 class PublisherInterface(ABC):

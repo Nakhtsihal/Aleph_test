@@ -1,9 +1,7 @@
 import asyncio
-import logging
-from enricher import Enricher
-from logging_config import setup_logging
-
-logger = logging.getLogger(__name__)
+from src.enricher import Enricher
+from src.logging_config import setup_logging
+from src import logger
 
 
 async def main() -> None:

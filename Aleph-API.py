@@ -6,10 +6,9 @@ from datetime import datetime, timezone
 from typing import Any
 import json
 import asyncio
-import logging
+from src import logger
 
 setup_logging()
-logger = logging.getLogger(__name__)
 app = FastAPI()
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 syslog_parser = SysLogParser()

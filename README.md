@@ -117,7 +117,7 @@ python -m pip install -r requirements.txt
 After the processor has created the stream, run the subscriber in a separate terminal:
 
 ```bash
-python src/nats_subscriber.py
+python -m src.nats_subscriber
 ```
 
 Messages are published to the `enriched_logs` subject and stored in the `enriched_logs` JetStream stream using file storage.

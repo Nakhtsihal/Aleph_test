@@ -4,23 +4,21 @@ import nats
 import time
 import os
 import httpx
-import logging
 import signal
 from nats.aio.client import Client
 from nats.js.client import JetStreamContext
-from parser import RegularLogParser, SysLogParser
-from enricher import Enricher
-from retriever import LogRetriever
-from nats_publisher import NatsPublisher, setup_jetstream
-from typing import Any
-from logging_config import setup_logging
+from src.parser import RegularLogParser, SysLogParser
+from src.enricher import Enricher
+from src.retriever import LogRetriever
+from src.nats_publisher import NatsPublisher, setup_jetstream
+from src.logging_config import setup_logging
 from collections.abc import Awaitable, Callable
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 from nats.errors import (ConnectionClosedError, ConnectionReconnectingError, NoRespondersError, NoServersError, TimeoutError as NatsTimeoutError)
 from nats.js.errors import ServiceUnavailableError
-
-logger = logging.getLogger(__name__)
+from src import logger
+from typing import Any
 
 
 async def retry_operation[T](

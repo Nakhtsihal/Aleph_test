@@ -10,4 +10,4 @@ COPY src/ ./src/
 
 COPY Aleph-API.py .
 
-CMD ["python", "src/processor.py"]
+CMD ["python", "-m", "src.processor"]

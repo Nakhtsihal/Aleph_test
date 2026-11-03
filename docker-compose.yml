@@ -18,7 +18,7 @@ services:
 
   redis-loader:
     build: .
-    command: python src/redis_loader.py
+    command: python -m src.redis_loader
     environment:
       REDIS_HOST: redis
     volumes:
@@ -37,7 +37,7 @@ services:
 
   processor:
     build: .
-    command: python src/processor.py
+    command: python -m src.processor
     environment:
       REDIS_HOST: redis
       NATS_URL: nats://nats:4222
