@@ -186,7 +186,7 @@ The module-level `main()` creates the processor and calls `start()` and `run()` 
 
 `LogRetriever` owns a reusable asynchronous HTTP client and retrieves logs from the API.
 
-`Enricher` owns the Redis client and a semaphore limiting concurrent lookups. It also loads enrichment metadata from a JSON file. The separate `redis-loader` service invokes this loading method and exits.
+`Enricher` owns the Redis client and enriches each batch with one `MGET` for its unique, non-empty client IPs. It also loads enrichment metadata from a JSON file. The separate `redis-loader` service invokes this loading method and exits.
 
 `NatsPublisher` implements `PublisherInterface` and publishes enriched logs through JetStream. `setup_jetstream()` creates an absent stream and checks the subject, storage type, and maximum age of an existing stream.
 
@@ -204,7 +204,6 @@ The processor reads these environment variables:
 |---|---|
 | `REDIS_HOST` | Redis hostname; default `localhost` |
 | `REDIS_PORT` | Redis port; default `6379` |
-| `ENRICHMENT_CONCURRENCY` | Concurrent Redis lookup limit; default `20` |
 | `NATS_URL` | NATS connection URL |
 | `ALEPH_API_URL` | Log retrieval endpoint |
 | `ALEPH_API_KEY` | API key; default fixture key `access_key_1` |
@@ -215,7 +214,7 @@ Compose sets `START_TIMESTAMP` to `1640995200`, the beginning of 2022, so the su
 
 The processor pauses for `POLL_INTERVAL` seconds after each successful batch or failed HTTP request.
 
-`Enricher` accepts `host`, `port`, and `concurrency` constructor arguments with environment fallbacks. Its current port and concurrency fallbacks use `or`, so zero selects the fallback. `LogRetriever` accepts `url` and `api_key`; omitted values are read from the environment.
+`Enricher` accepts `host` and `port` constructor arguments with environment fallbacks. `LogRetriever` accepts `url` and `api_key`; omitted values are read from the environment.
 
 `NatsPublisher` accepts a JetStream context and subject. `setup_jetstream()` accepts `stream_name`, `subject`, and `max_age` in seconds. The default maximum age is `0.0` (no age limit). Existing stream settings must match the requested values.
 
@@ -236,7 +235,7 @@ The processor pauses for `POLL_INTERVAL` seconds after each successful batch or 
 - `findings` maps the client IP to its full Redis metadata.
 - Other available fields handled by the parser, such as `audit_id` and `action`, are retained.
 
-HTTP, Redis, and NATS operations use asynchronous clients. Blocking file operations run through `asyncio.to_thread()`. A semaphore limits concurrent Redis enrichment lookups to the configured concurrency, 20 by default.
+HTTP, Redis, and NATS operations use asynchronous clients. Blocking file operations run through `asyncio.to_thread()`.
 
 The output is a JSON array. Each non-empty batch is added to the existing records, written to a temporary file, and then replaces the main file using `os.replace()`.
 
@@ -253,6 +252,6 @@ File output and NATS publication are separate operations. They are not a single 
 
 SysLogParser uses an internal RegularLogParser to normalize the payload, then sets source and severity from the syslog header.
 
-Temporary Redis connection and timeout errors, selected NATS publication errors, and temporary JetStream setup errors are retried after POLL_INTERVAL seconds. Each retry repeats the individual operation. The NATS client uses unlimited reconnect attempts with a two-second delay. Invalid stream configuration is not retried.
+Temporary Redis connection and timeout errors, selected NATS publication errors, and temporary JetStream setup errors are retried after POLL_INTERVAL seconds. A Redis retry repeats the batch lookup. A publication retry repeats the individual message. The NATS client uses unlimited reconnect attempts with a two-second delay. Invalid stream configuration is not retried.
 
 A publication timeout can occur after NATS stores a message; retrying may produce duplicates. The polling position remains in memory, so restarting can process old records again.

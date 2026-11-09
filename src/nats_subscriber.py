@@ -7,9 +7,23 @@ from nats.js.api import ConsumerConfig
 from nats.js.errors import NotFoundError
 from src.logging_config import setup_logging
 from src import logger
+from abc import ABC, abstractmethod
 
 
-class NatsSubscriber:
+class NatsSubscriberInterface(ABC):
+    @abstractmethod
+    async def start(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def run(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def close(self) -> None:
+        raise NotImplementedError
+
+class NatsSubscriber(NatsSubscriberInterface):
     def __init__(
             self,
             url: str | None = None,
@@ -37,7 +51,7 @@ class NatsSubscriber:
         self.max_ack_pending = max_ack_pending
 
     async def start(self) -> None:
-        self.nats_client = await nats.connect(self.url, error_cb=self.error_handler,)
+        self.nats_client = await nats.connect(self.url, error_cb=self.error_handler)
 
     async def message_handler(self, msg: Msg) -> None:
         logger.info(
@@ -93,7 +107,7 @@ class NatsSubscriber:
 
         await asyncio.Event().wait()
 
-    async def close_connection(self) -> None:
+    async def close(self) -> None:
         if self.nats_client is not None:
             await self.nats_client.drain()
             logger.info(
@@ -117,7 +131,7 @@ async def main() -> None:
         await subscriber.run()
 
     finally:
-        await subscriber.close_connection()
+        await subscriber.close()
 
 if __name__ == "__main__":
     setup_logging()

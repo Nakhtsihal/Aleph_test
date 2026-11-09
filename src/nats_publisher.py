@@ -8,7 +8,6 @@ from src import logger
 import json
 
 
-
 class PublisherInterface(ABC):
     @abstractmethod
     async def publish_log(self, log: dict[str, Any]) -> None:
