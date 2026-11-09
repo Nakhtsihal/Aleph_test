@@ -45,6 +45,7 @@ class Enricher:
         metadata_by_ip: dict[str, str | None] = {}
 
         if client_ips:
+            # Read metadata for the batch in one Redis request.
             values = await self._redis.mget(client_ips)
             metadata_by_ip = dict(zip(client_ips, values))
 

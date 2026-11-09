@@ -11,6 +11,8 @@ from abc import ABC, abstractmethod
 
 
 class NatsSubscriberInterface(ABC):
+    """Lifecycle contract for NATS subscribers.""
+
     @abstractmethod
     async def start(self) -> None:
         raise NotImplementedError

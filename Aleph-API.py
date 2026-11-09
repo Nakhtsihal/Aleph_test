@@ -73,6 +73,7 @@ async def get_logs(since: int,
 
                 timestamp = timestamp_to_seconds(parsed_log["timestamp"])
             except (ValueError, KeyError, TypeError, OverflowError) as error:
+                # Skip the malformed entry and keep the rest of the response.
                 logger.warning(
                     "Skipping invalid log: %s",
                     error,

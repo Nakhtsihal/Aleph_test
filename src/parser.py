@@ -34,6 +34,7 @@ class SysLogParser(ParserInterface):
     def parse(self, log: str) -> dict[str, Any]:
         index = log.find('"AuditID"')
 
+        # Reject unsupported syslog layouts before slicing the payload.
         if index == -1:
             raise ValueError("AuditID not found")
 
