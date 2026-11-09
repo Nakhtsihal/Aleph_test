@@ -50,7 +50,7 @@ async def retry_operation[T](
             await asyncio.sleep(retry_delay)
 
 class LogProcessorInterface(ABC):
-    """Lifecycle contract for log processors.""
+    """Methods every processor must implement.""
 
     @abstractmethod
     async def start(self) -> None:
@@ -79,7 +79,7 @@ class LogProcessor(LogProcessorInterface):
         self.regular_parser = RegularLogParser()
         self.syslog_parser = SysLogParser()
         self.retriever = LogRetriever()
-        # Processing only relies on the publish_log contract.
+        # Any publisher with publish_log works here.
         self.publisher: PublisherInterface | None = None
 
     async def start(self) -> None:
@@ -147,7 +147,7 @@ class LogProcessor(LogProcessorInterface):
                     else:
                         raise ValueError(f"Unsupported log type: {type(log).__name__}")
                 except ValueError as error:
-                    # Keep processing the batch after a malformed record.
+                    # Skip this log and keep going.
                     logger.warning(
                         "Skipping invalid log: %s",
                         error,

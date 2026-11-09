@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 
 
 class NatsSubscriberInterface(ABC):
-    """Lifecycle contract for NATS subscribers.""
+    """Methods every subscriber must implement.""
 
     @abstractmethod
     async def start(self) -> None:
