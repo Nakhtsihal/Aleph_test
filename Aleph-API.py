@@ -64,12 +64,22 @@ async def get_logs(since: int,
         filtered_logs = []
 
         for log in logs:
-            if isinstance(log, str):
-                parsed_log = syslog_parser.parse(log)
-            else:
-                parsed_log = log
+            try:
+                if isinstance(log, str):
+                    parsed_log = syslog_parser.parse(log)
+                else:
+                    parsed_log = log
 
-            timestamp = timestamp_to_seconds(parsed_log["timestamp"])
+
+                timestamp = timestamp_to_seconds(parsed_log["timestamp"])
+            except (ValueError, KeyError, TypeError, OverflowError) as error:
+                # Skip this log and keep going.
+                logger.warning(
+                    "Skipping invalid log: %s",
+                    error,
+                    extra={"action": "get_logs", "status": "skipped"},
+                )
+                continue
             if since < timestamp <= until:
                 filtered_logs.append(log)
     except Exception:

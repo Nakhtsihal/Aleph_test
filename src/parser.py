@@ -33,8 +33,16 @@ class SysLogParser(ParserInterface):
 
     def parse(self, log: str) -> dict[str, Any]:
         index = log.find('"AuditID"')
+
+        # The log must contain AuditID.
+        if index == -1:
+            raise ValueError("AuditID not found")
+
         header = log[:index].strip()
         parts = header.split()
+
+        if len(parts) < 2:
+            raise ValueError("Invalid syslog header")
 
         source = parts[-2]
         severity = parts[-1].rstrip(":").lower()

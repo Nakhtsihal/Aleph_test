@@ -10,7 +10,7 @@ from nats.js.client import JetStreamContext
 from src.parser import RegularLogParser, SysLogParser
 from src.enricher import Enricher
 from src.retriever import LogRetriever
-from src.nats_publisher import NatsPublisher, setup_jetstream
+from src.nats_publisher import NatsPublisher, setup_jetstream, PublisherInterface
 from src.logging_config import setup_logging
 from collections.abc import Awaitable, Callable
 from redis.exceptions import ConnectionError as RedisConnectionError
@@ -19,6 +19,7 @@ from nats.errors import (ConnectionClosedError, ConnectionReconnectingError, NoR
 from nats.js.errors import ServiceUnavailableError
 from src import logger
 from typing import Any
+from abc import ABC, abstractmethod
 
 
 async def retry_operation[T](
@@ -48,8 +49,23 @@ async def retry_operation[T](
             )
             await asyncio.sleep(retry_delay)
 
+class LogProcessorInterface(ABC):
+    """Methods every processor must implement.""
 
-class LogProcessor:
+    @abstractmethod
+    async def start(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def run(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def close(self) -> None:
+        raise NotImplementedError
+
+
+class LogProcessor(LogProcessorInterface):
     def __init__(self) -> None:
         self.poll_interval = int(os.getenv("POLL_INTERVAL", "30"))
 
@@ -63,7 +79,8 @@ class LogProcessor:
         self.regular_parser = RegularLogParser()
         self.syslog_parser = SysLogParser()
         self.retriever = LogRetriever()
-        self.publisher: NatsPublisher | None = None
+        # Any publisher with publish_log works here.
+        self.publisher: PublisherInterface | None = None
 
     async def start(self) -> None:
         self.nats_client = await retry_operation(
@@ -117,22 +134,34 @@ class LogProcessor:
                 await asyncio.sleep(self.poll_interval)
                 continue
 
-            tasks = []
+            parsed_logs = []
 
             for log in logs:
-                if isinstance(log, str):
-                    parsed_log = self.syslog_parser.parse(log)
-                else:
-                    parsed_log = self.regular_parser.parse(log)
+                try:
+                    if isinstance(log, str):
+                        parsed_log = self.syslog_parser.parse(log)
 
-                task = retry_operation(
-                    lambda current_log=parsed_log: self.enricher.enrich_log(current_log),
-                    action="enrich_log",
-                    retry_delay=self.poll_interval,
-                )
-                tasks.append(task)
+                    elif isinstance(log, dict):
+                        parsed_log = self.regular_parser.parse(log)
 
-            enriched_logs = await asyncio.gather(*tasks)
+                    else:
+                        raise ValueError(f"Unsupported log type: {type(log).__name__}")
+                except ValueError as error:
+                    # Skip this log and keep going.
+                    logger.warning(
+                        "Skipping invalid log: %s",
+                        error,
+                        extra={"action": "parse_log", "status": "skipped"}
+                    )
+                    continue
+
+                parsed_logs.append(parsed_log)
+
+            enriched_logs = await retry_operation(
+                lambda: self.enricher.enrich_logs(parsed_logs),
+                action="enrich_logs",
+                retry_delay=self.poll_interval,
+            )
 
             for log in enriched_logs:
                 await retry_operation(
